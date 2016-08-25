@@ -37,7 +37,7 @@ def invcheck(x):
     warnings.warn("Ill-conditioning encountered, result accuracy may be poor")
   return(x)
 
-def irlb(A,n,tol=0.0001,maxit=50):
+def irlb(A,n,tol=0.0001,maxit=50,center=None,scale=None):
   """Estimate a few of the largest singular values and corresponding singular
   vectors of matrix using the implicitly restarted Lanczos bidiagonalization
   method of Baglama and Reichel, see:
@@ -84,17 +84,36 @@ def irlb(A,n,tol=0.0001,maxit=50):
 
   while(it < maxit):
     if(it>0): j=k
-    W[:,j] = mult(A,V[:,j])
+
+    VJ = V[:,j]
+
+    # apply scaling
+    if scale is not None:
+      VJ = VJ / scale
+
+    W[:,j] = mult(A,VJ)
     mprod+=1
+
+    # apply centering
+    # R code: W[, j_w] <- W[, j_w] - ds * drop(cross(dv, VJ)) * du
+    if center is not None:
+      W[:,j] = W[:,j] - np.dot(center, VJ)
+
     if(it>0):
       W[:,j] = orthog(W[:,j],W[:,0:j]) # NB W[:,0:j] selects columns 0,1,...,j-1
     s = np.linalg.norm(W[:,j])
     sinv = invcheck(s)
     W[:,j] = sinv*W[:,j]
+
     # Lanczos process
     while(j<m_b):
       F = mult(A,W[:,j],t=True)
       mprod+=1
+
+      # apply scaling
+      if scale is not None:
+        F = F / scale
+
       F = F - s*V[:,j]
       F = orthog(F,V[:,0:j+1])
       fn = np.linalg.norm(F)
@@ -103,15 +122,27 @@ def irlb(A,n,tol=0.0001,maxit=50):
       if(j<m_b-1):
         V[:,j+1] = F
         B[j,j] = s
-        B[j,j+1] = fn 
-        W[:,j+1] = mult(A,V[:,j+1])
+        B[j,j+1] = fn
+        VJp1 = V[:,j+1]
+
+        # apply scaling
+        if scale is not None:
+          VJp1 = VJp1 / scale
+
+        W[:,j+1] = mult(A,VJp1)
         mprod+=1
+
+        # apply centering
+        # R code: W[, jp1_w] <- W[, jp1_w] - ds * drop(cross(dv, VJP1)) * du
+        if center is not None:
+          W[:,j+1] = W[:,j+1] - np.dot(center, VJp1)
+
         # One step of classical Gram-Schmidt...
         W[:,j+1] = W[:,j+1] - fn*W[:,j]
         # ...with full reorthogonalization
         W[:,j+1] = orthog(W[:,j+1],W[:,0:(j+1)])
         s = np.linalg.norm(W[:,j+1])
-        sinv = invcheck(s) 
+        sinv = invcheck(s)
         W[:,j+1] = sinv * W[:,j+1]
       else:
         B[j,j] = s
@@ -132,7 +163,7 @@ def irlb(A,n,tol=0.0001,maxit=50):
       break
     # Update the Ritz vectors
     V[:,0:k] = V[:,0:m_b].dot(S[2].transpose()[:,0:k])
-    V[:,k] = F 
+    V[:,k] = F
     B = np.zeros((m_b,m_b))
     # Improve this! There must be better way to assign diagonal...
     for l in xrange(0,k):
