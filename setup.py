@@ -8,7 +8,7 @@ setup(
     version='0.1.0',
     author='Bryan W. Lewis',
     author_email='blewis@illposed.net',
-    packages=['irlb'],
+    packages=['irlbpy'],
     url='https://github.com/bwlewis/irlbpy',
     license='LICENSE.txt',
     description='Truncated SVD by implicitly restarted Lanczos '
@@ -16,9 +16,9 @@ setup(
     long_description=open('README.rst').read(),
     install_requires=["numpy"],
     entry_points={
-      'console_scripts':[
-        'scipy_bench=irlb.scipy_bench:main'
-      ],
+        'console_scripts': [
+            'scipy_bench=irlb.scipy_bench:main'
+        ],
     },
+    zip_safe=False
 )
-

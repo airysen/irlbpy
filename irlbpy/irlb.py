@@ -1,22 +1,21 @@
 import numpy as np
 import scipy.sparse as sp
 import warnings
-#import pdb
+
 
 # Matrix-vector product wrapper
 # A is a numpy 2d array or matrix, or a scipy matrix or sparse matrix.
 # x is a numpy vector only.
 # Compute A.dot(x) if t is False,  A.transpose().dot(x)  otherwise.
 
-
-def mult(A, x, t=False):
+def multA(A, x, TP=False):
     if(sp.issparse(A)):
         m = A.shape[0]
         n = A.shape[1]
         if(t):
             return(sp.csr_matrix(x).dot(A).transpose().todense().A[:, 0])
         return(A.dot(sp.csr_matrix(x).transpose()).todense().A[:, 0])
-    if(t):
+    if(TP):
         return(x.dot(A))
     return(A.dot(x))
 
@@ -26,8 +25,8 @@ def orthog(Y, X):
     This function requires that the column dimension of Y is less than X and
     that Y and X have the same number of rows.
     """
-    dotY = mult(X, Y, t=True)
-    return (Y - mult(X, dotY))
+    dotY = multA(X, Y, TP=True)
+    return (Y - multA(X, dotY))
 
 # Simple utility function used to check linear dependencies during computation:
 
@@ -43,7 +42,7 @@ def invcheck(x):
     return(x)
 
 
-def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
+def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
     """Estimate a few of the largest singular values and corresponding singular
     vectors of matrix using the implicitly restarted Lanczos bidiagonalization
     method of Baglama and Reichel, see:
@@ -88,7 +87,7 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
     V[:, 0] = np.random.randn(n)  # Initial vector
     V[:, 0] = V[:, 0] / np.linalg.norm(V)
 
-    while(it < maxit):
+    while it < maxit:
         if(it > 0):
             j = k
 
@@ -98,7 +97,7 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
         if scale is not None:
             VJ = VJ / scale
 
-        W[:, j] = mult(A, VJ)
+        W[:, j] = multA(A, VJ)
         mprod += 1
 
         # apply centering
@@ -115,7 +114,7 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
 
         # Lanczos process
         while(j < m_b):
-            F = mult(A, W[:, j], t=True)
+            F = multA(A, W[:, j], TP=True)
             mprod += 1
 
             # apply scaling
@@ -137,8 +136,8 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
                 if scale is not None:
                     VJp1 = VJp1 / scale
 
-                W[:, j + 1] = mult(A, VJp1)
-                mprod += 1
+                W[:, j + 1] = multA(A, VJp1)
+                mprod = mprod + 1
 
                 # apply centering
                 # R code: W[, jp1_w] <- W[, jp1_w] - ds * drop(cross(dv, VJP1))
@@ -155,11 +154,11 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
                 W[:, j + 1] = sinv * W[:, j + 1]
             else:
                 B[j, j] = s
-            j += 1
+            j = j + 1
         # End of Lanczos process
         S = np.linalg.svd(B)
         R = fn * S[0][m_b - 1, :]  # Residuals
-        if(iter < 1):
+        if it == 0:
             smax = S[1][0]  # Largest Ritz value
         else:
             smax = max((S[1][0], smax))
@@ -175,13 +174,27 @@ def irlb(A, n, tol=0.0001, maxit=50, center=None, scale=None):
         V[:, k] = F
         B = np.zeros((m_b, m_b))
         # Improve this! There must be better way to assign diagonal...
-        for l in xrange(0, k):
+        for l in range(k):
             B[l, l] = S[1][l]
         B[0:k, k] = R[0:k]
         # Update the left approximate singular vectors
         W[:, 0:k] = W[:, 0:m_b].dot(S[0][:, 0:k])
-        it += 1
+        it = it + 1
 
     U = W[:, 0:m_b].dot(S[0][:, 0:nu])
     V = V[:, 0:m_b].dot(S[2].transpose()[:, 0:nu])
-    return((U, S[1][0:nu], V, it, mprod))
+    # return((U, S[1][0:nu], V, it, mprod))
+
+    return LanczosResult(**{'U': U,
+                            's': S[1][0:nu],
+                            'V': V,
+                            'steps': it,
+                            'nmult': mprod
+                            })
+
+
+class LanczosResult():
+
+    def __init__(self, **kwargs):
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
