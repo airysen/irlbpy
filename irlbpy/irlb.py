@@ -53,15 +53,15 @@ def prepare_v(v, N, L, TP=False):
         lencheck = L
         if v.shape[0] != lencheck:
             raise VectorLengthException('Length of v must be  L (if transpose flag is True)')
-        pw = L + 1
-        vp = np.pad(v, (pw, 0), mode='constant', constant_values=0)
+        pw = K - 1
+        v = np.pad(v, (pw, 0), mode='constant', constant_values=0)
     elif not TP:
         lencheck = N - L + 1
         if v.shape[0] != lencheck:
             raise VectorLengthException('Length of v must be N-K+1')
-        pw = K - 1
-        vp = np.pad(v, (0, pw), mode='constant', constant_values=0)
-    return vp
+        pw = L - 1
+        v = np.pad(v, (0, pw), mode='constant', constant_values=0)
+    return v
 
 
 def orthog(Y, X):
