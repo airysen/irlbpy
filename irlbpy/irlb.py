@@ -24,33 +24,44 @@ def multA(A, x, TP=False):
 
 
 def multS(s, v, L=None, TP=False):
-    v = v.flatten()[::-1]
+
     N = s.shape[0]
     if L is None:
         L = N // 2
     K = N - L + 1
-    s = np.roll(s, K - 1)
 
+    vp = prepare_v(v, N, L, TP=TP)
+
+    p = irfft(rfft(vp) * rfft(s))
+    if not TP:
+        return p[:L]
+    return p[L - 1:]
+
+
+def prepare_s(s, L=None):
+    N = s.shape[0]
+    if L is None:
+        L = N // 2
+    K = N - L + 1
+    return np.roll(s, K - 1)
+
+
+def prepare_v(v, N, L, TP=False):
+    v = v.flatten()[::-1]
+    K = N - L + 1
     if TP:
         lencheck = L
         if v.shape[0] != lencheck:
             raise VectorLengthException('Length of v must be  L (if transpose flag is True)')
         pw = L + 1
-        v = np.pad(v, (pw, 0), mode='constant', constant_values=0)
-    # if TP:
-    #     pw = L + 1
-    #     v = np.pad(v, (pw, 0), mode='constant', constant_values=0)
+        vp = np.pad(v, (pw, 0), mode='constant', constant_values=0)
     elif not TP:
         lencheck = N - L + 1
         if v.shape[0] != lencheck:
             raise VectorLengthException('Length of v must be N-K+1')
         pw = K - 1
-        v = np.pad(v, (0, pw), mode='constant', constant_values=0)
-
-    p = irfft(rfft(v) * rfft(s))
-    if not TP:
-        return p[:L]
-    return p[L - 1:]
+        vp = np.pad(v, (0, pw), mode='constant', constant_values=0)
+    return vp
 
 
 def orthog(Y, X):
@@ -75,7 +86,7 @@ def invcheck(x):
     return(x)
 
 
-def lanczos(A, nval, tol=0.00001, maxit=50, center=None, scale=None, L=None):
+def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
     """Estimate a few of the largest singular values and corresponding singular
     vectors of matrix using the implicitly restarted Lanczos bidiagonalization
     method of Baglama and Reichel, see:
@@ -117,8 +128,9 @@ def lanczos(A, nval, tol=0.00001, maxit=50, center=None, scale=None, L=None):
         K = N - L + 1
         m = L
         n = K
+        A = prepare_s(A, L)
     elif A.ndim > 2:
-        raise MatrixShapeException("The input matrix must be at least 2x2.")
+        raise MatrixShapeException("The input matrix must be 2D array")
     nu = nval
 
     m_b = min((nu + 20, 3 * nu, n))  # Working dimension size
