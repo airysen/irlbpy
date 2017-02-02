@@ -1,6 +1,9 @@
 import numpy as np
-import scipy.sparse as sp
+import scipy.sparse as sparse
 import warnings
+
+from numpy.fft import rfft, irfft
+import numpy.linalg as nla
 
 
 # Matrix-vector product wrapper
@@ -9,15 +12,56 @@ import warnings
 # Compute A.dot(x) if t is False,  A.transpose().dot(x)  otherwise.
 
 def multA(A, x, TP=False):
-    if(sp.issparse(A)):
+    if(sparse.issparse(A)):
         m = A.shape[0]
         n = A.shape[1]
         if(t):
-            return(sp.csr_matrix(x).dot(A).transpose().todense().A[:, 0])
-        return(A.dot(sp.csr_matrix(x).transpose()).todense().A[:, 0])
+            return(sparse.csr_matrix(x).dot(A).transpose().todense().A[:, 0])
+        return(A.dot(sparse.csr_matrix(x).transpose()).todense().A[:, 0])
     if(TP):
         return(x.dot(A))
     return(A.dot(x))
+
+
+def multS(s, v, L=None, TP=False):
+
+    N = s.shape[0]
+    if L is None:
+        L = N // 2
+    K = N - L + 1
+
+    vp = prepare_v(v, N, L, TP=TP)
+
+    p = irfft(rfft(vp) * rfft(s))
+    if not TP:
+        return p[:L]
+    return p[L - 1:]
+
+
+def prepare_s(s, L=None):
+    N = s.shape[0]
+    if L is None:
+        L = N // 2
+    K = N - L + 1
+    return np.roll(s, K - 1)
+
+
+def prepare_v(v, N, L, TP=False):
+    v = v.flatten()[::-1]
+    K = N - L + 1
+    if TP:
+        lencheck = L
+        if v.shape[0] != lencheck:
+            raise VectorLengthException('Length of v must be  L (if transpose flag is True)')
+        pw = K - 1
+        v = np.pad(v, (pw, 0), mode='constant', constant_values=0)
+    elif not TP:
+        lencheck = N - L + 1
+        if v.shape[0] != lencheck:
+            raise VectorLengthException('Length of v must be N-K+1')
+        pw = L - 1
+        v = np.pad(v, (0, pw), mode='constant', constant_values=0)
+    return v
 
 
 def orthog(Y, X):
@@ -42,7 +86,7 @@ def invcheck(x):
     return(x)
 
 
-def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
+def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
     """Estimate a few of the largest singular values and corresponding singular
     vectors of matrix using the implicitly restarted Lanczos bidiagonalization
     method of Baglama and Reichel, see:
@@ -66,18 +110,36 @@ def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
     The algorithm estimates the truncated singular value decomposition:
     A.dot(X[2]) = X[0]*X[1].
     """
-    nu = n
-    m = A.shape[0]
-    n = A.shape[1]
-    if(min(m, n) < 2):
-        raise Exception("The input matrix must be at least 2x2.")
+    mmult = None
+    m = None
+    n = None
+    if A.ndim == 2:
+        mmult = multA
+        m = A.shape[0]
+        n = A.shape[1]
+        if(min(m, n) < 2):
+            raise MatrixShapeException("The input matrix must be at least 2x2.")
+
+    elif A.ndim == 1:
+        mmult = multS
+        N = A.shape[0]
+        if L is None:
+            L = N // 2
+        K = N - L + 1
+        m = L
+        n = K
+        A = prepare_s(A, L)
+    elif A.ndim > 2:
+        raise MatrixShapeException("The input matrix must be 2D array")
+    nu = nval
+
     m_b = min((nu + 20, 3 * nu, n))  # Working dimension size
     mprod = 0
     it = 0
     j = 0
     k = nu
     smax = 1
-    sparse = sp.issparse(A)
+    # sparse = sparse.issparse(A)
 
     V = np.zeros((n, m_b))
     W = np.zeros((m, m_b))
@@ -97,8 +159,8 @@ def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
         if scale is not None:
             VJ = VJ / scale
 
-        W[:, j] = multA(A, VJ)
-        mprod += 1
+        W[:, j] = mmult(A, VJ)
+        mprod = mprod + 1
 
         # apply centering
         # R code: W[, j_w] <- W[, j_w] - ds * drop(cross(dv, VJ)) * du
@@ -114,8 +176,8 @@ def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
 
         # Lanczos process
         while(j < m_b):
-            F = multA(A, W[:, j], TP=True)
-            mprod += 1
+            F = mmult(A, W[:, j], TP=True)
+            mprod = mprod + 1
 
             # apply scaling
             if scale is not None:
@@ -136,7 +198,7 @@ def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
                 if scale is not None:
                     VJp1 = VJp1 / scale
 
-                W[:, j + 1] = multA(A, VJp1)
+                W[:, j + 1] = mmult(A, VJp1)
                 mprod = mprod + 1
 
                 # apply centering
@@ -156,7 +218,7 @@ def lanczos(A, n, tol=0.0001, maxit=50, center=None, scale=None):
                 B[j, j] = s
             j = j + 1
         # End of Lanczos process
-        S = np.linalg.svd(B)
+        S = nla.svd(B)
         R = fn * S[0][m_b - 1, :]  # Residuals
         if it == 0:
             smax = S[1][0]  # Largest Ritz value
@@ -198,3 +260,11 @@ class LanczosResult():
     def __init__(self, **kwargs):
         for key in kwargs:
             setattr(self, key, kwargs[key])
+
+
+class VectorLengthException(Exception):
+    pass
+
+
+class MatrixShapeException(Exception):
+    pass
