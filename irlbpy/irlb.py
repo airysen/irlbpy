@@ -11,27 +11,22 @@ import numpy.linalg as nla
 # x is a numpy vector only.
 # Compute A.dot(x) if t is False,  A.transpose().dot(x)  otherwise.
 
-def multA(A, x, TP=False):
-    if(sparse.issparse(A)):
-        m = A.shape[0]
-        n = A.shape[1]
-        if(t):
-            return(sparse.csr_matrix(x).dot(A).transpose().todense().A[:, 0])
-        return(A.dot(sparse.csr_matrix(x).transpose()).todense().A[:, 0])
-    if(TP):
-        return(x.dot(A))
-    return(A.dot(x))
+def multA(A, x, TP=False, L=None):
+    if sparse.issparse(A) :
+        # m = A.shape[0]
+        # n = A.shape[1]
+        if TP:
+            return sparse.csr_matrix(x).dot(A).transpose().todense().A[:, 0]
+        return A.dot(sparse.csr_matrix(x).transpose()).todense().A[:, 0]
+    if TP:
+        return x.dot(A)
+    return A.dot(x)
 
 
-def multS(s, v, L=None, TP=False):
+def multS(s, v, L, TP=False):
 
     N = s.shape[0]
-    if L is None:
-        L = N // 2
-    K = N - L + 1
-
     vp = prepare_v(v, N, L, TP=TP)
-
     p = irfft(rfft(vp) * rfft(s))
     if not TP:
         return p[:L]
@@ -122,6 +117,7 @@ def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
 
     elif A.ndim == 1:
         mmult = multS
+        A = np.pad(A, (0, A.shape[0] % 2), mode='edge')
         N = A.shape[0]
         if L is None:
             L = N // 2
@@ -159,7 +155,7 @@ def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
         if scale is not None:
             VJ = VJ / scale
 
-        W[:, j] = mmult(A, VJ)
+        W[:, j] = mmult(A, VJ, L=L)
         mprod = mprod + 1
 
         # apply centering
@@ -176,7 +172,7 @@ def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
 
         # Lanczos process
         while(j < m_b):
-            F = mmult(A, W[:, j], TP=True)
+            F = mmult(A, W[:, j], TP=True, L=L)
             mprod = mprod + 1
 
             # apply scaling
@@ -198,7 +194,7 @@ def lanczos(A, nval, tol=0.0001, maxit=50, center=None, scale=None, L=None):
                 if scale is not None:
                     VJp1 = VJp1 / scale
 
-                W[:, j + 1] = mmult(A, VJp1)
+                W[:, j + 1] = mmult(A, VJp1, L=L)
                 mprod = mprod + 1
 
                 # apply centering
